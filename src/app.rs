@@ -3017,6 +3017,26 @@ impl App {
                             }
                         }
                     }
+                    KeyCode::Char('b') => {
+                        if self.bounty.is_some() {
+                            if let Some(b) = self.bounty.take() {
+                                self.narrator.say(format!("Bounty abandoned: {}.", b.title()));
+                            }
+                        } else if let Some(b) = crate::procedural_quests::roll(
+                            &self.caught,
+                            &mut self.rng_state,
+                        ) {
+                            self.narrator.say(format!(
+                                "New bounty: {}. Reward: +{}$V, +{} skill point(s).",
+                                b.title(),
+                                b.reward_valu,
+                                b.reward_points
+                            ));
+                            self.bounty = Some(b);
+                        } else {
+                            self.narrator.say("Catch at least one non-unique fish first.");
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -6842,6 +6862,7 @@ impl App {
                 self.pinned_quest.as_deref(),
                 self.daily_progress,
                 self.daily_completed,
+                self.bounty.as_ref(),
             ),
             Scene::Map { offset } => {
                 let empty = std::collections::HashSet::new();
@@ -7566,11 +7587,12 @@ fn render_quests(
     pinned: Option<&str>,
     daily_progress: u32,
     daily_completed: bool,
+    bounty: Option<&crate::procedural_quests::ProceduralQuest>,
 ) {
     let area = viewport(frame);
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" tasks (j/k navigate, p pin/unpin, q/esc close) ")
+        .title(" tasks (j/k navigate, p pin/unpin, b roll/abandon bounty, q/esc close) ")
         .border_style(Style::default().fg(Color::Cyan));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -7618,6 +7640,43 @@ fn render_quests(
     } else {
         lines.push(ratatui::text::Line::from(ratatui::text::Span::styled(
             "    (no daily today)".to_string(),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    lines.push(ratatui::text::Line::from(""));
+    lines.push(ratatui::text::Line::from(ratatui::text::Span::styled(
+        "  BOUNTY",
+        Style::default()
+            .fg(Color::LightRed)
+            .add_modifier(Modifier::BOLD),
+    )));
+    if let Some(b) = bounty {
+        lines.push(ratatui::text::Line::from(vec![
+            ratatui::text::Span::raw("    "),
+            ratatui::text::Span::styled(
+                "[active]".to_string(),
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
+            ratatui::text::Span::raw("  "),
+            ratatui::text::Span::styled(
+                b.title(),
+                Style::default()
+                    .fg(Color::LightYellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            ratatui::text::Span::raw(format!("  {}/{}  ", b.progress, b.count)),
+            ratatui::text::Span::styled(
+                format!("(+{}$V, +{}sp)", b.reward_valu, b.reward_points),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
+        lines.push(ratatui::text::Line::from(ratatui::text::Span::styled(
+            "    press b to abandon".to_string(),
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        lines.push(ratatui::text::Line::from(ratatui::text::Span::styled(
+            "    (none)  press b to roll a new bounty".to_string(),
             Style::default().fg(Color::DarkGray),
         )));
     }
