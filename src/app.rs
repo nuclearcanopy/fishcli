@@ -6787,6 +6787,9 @@ impl App {
                     &caught_context_snapshot,
                     &self.mastery,
                     &blurb,
+                    &self.challenge_progress,
+                    &self.challenge_done,
+                    self.bounty.as_ref(),
                 );
             }
             Scene::NamePrompt(buf) => render_name_prompt(frame, buf),

@@ -111,6 +111,9 @@ impl Fishdex {
         caught_context: &[Option<(String, String, String)>],
         mastery: &[u32],
         milestone_blurb: &str,
+        challenge_progress: &std::collections::BTreeMap<String, u32>,
+        challenge_done: &[String],
+        bounty: Option<&crate::procedural_quests::ProceduralQuest>,
     ) {
         let area = frame.area();
         let total = fish().len();
@@ -195,15 +198,36 @@ impl Fishdex {
                             .add_modifier(Modifier::BOLD),
                     )),
                     Line::from(""),
-                    Line::from(vec![
-                        Span::raw("difficulty: "),
-                        Span::styled(
-                            "*".repeat(f.difficulty as usize),
-                            Style::default().fg(Color::Yellow),
-                        ),
-                    ]),
-                    Line::from(""),
                 ];
+                if let Some(b) = bounty {
+                    if b.fish_name.eq_ignore_ascii_case(&f.name) {
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                "BOUNTY ACTIVE  ",
+                                Style::default()
+                                    .fg(Color::LightRed)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                format!("{}/{}", b.progress, b.count),
+                                Style::default().fg(Color::LightYellow),
+                            ),
+                            Span::styled(
+                                format!("  (+{}$V, +{}sp)", b.reward_valu, b.reward_points),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                        ]));
+                        lines.push(Line::from(""));
+                    }
+                }
+                lines.push(Line::from(vec![
+                    Span::raw("difficulty: "),
+                    Span::styled(
+                        "*".repeat(f.difficulty as usize),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                ]));
+                lines.push(Line::from(""));
                 if let Some(Some((biome, water))) = caught_at.get(sel) {
                     lines.push(Line::from(vec![
                         Span::raw("location:  "),
@@ -286,6 +310,57 @@ impl Fishdex {
                         Style::default().fg(Color::LightYellow),
                     ),
                 ]));
+                let chs = crate::mastery_challenges::challenges_for_name(&f.name);
+                if !chs.is_empty() {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(Span::styled(
+                        "challenges:",
+                        Style::default()
+                            .fg(Color::LightCyan)
+                            .add_modifier(Modifier::BOLD),
+                    )));
+                    for ch in chs {
+                        let done = challenge_done.iter().any(|id| id == &ch.id);
+                        let cur = challenge_progress.get(&ch.id).copied().unwrap_or(0);
+                        let (state_label, state_color) = if done {
+                            ("[done]   ", Color::Green)
+                        } else {
+                            ("[active] ", Color::Yellow)
+                        };
+                        let progress_str = if done {
+                            format!("{}/{}", ch.target, ch.target)
+                        } else {
+                            format!("{}/{}", cur.min(ch.target), ch.target)
+                        };
+                        lines.push(Line::from(vec![
+                            Span::raw("  "),
+                            Span::styled(
+                                state_label.to_string(),
+                                Style::default().fg(state_color).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                ch.title.clone(),
+                                Style::default().fg(Color::LightYellow),
+                            ),
+                            Span::raw("  "),
+                            Span::styled(
+                                progress_str,
+                                Style::default().fg(Color::Gray),
+                            ),
+                            Span::styled(
+                                format!("  (+{}sp)", ch.reward_points),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                        ]));
+                        lines.push(Line::from(vec![
+                            Span::raw("           "),
+                            Span::styled(
+                                ch.description.clone(),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                        ]));
+                    }
+                }
                 // Cross-link: list every recipe whose ingredient list
                 // references this fish, so the player can scan from dex
                 // straight to cookbook intent.
