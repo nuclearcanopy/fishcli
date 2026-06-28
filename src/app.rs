@@ -924,6 +924,10 @@ impl App {
             self.world.chopped.insert((x, y), t);
         }
         self.world.prune_chopped();
+        self.world.opened_chests.clear();
+        for &xy in &data.opened_chests {
+            self.world.opened_chests.insert(xy);
+        }
         // Legacy save with `has_boat=true` but no hull tier? Treat it as
         // tier 1 with a fresh tank so the player keeps the boat they paid for.
         if self.player.has_boat && self.player.hull_tier == 0 {
@@ -1059,6 +1063,7 @@ impl App {
                 .iter()
                 .map(|(&(x, y), &t)| (x, y, t))
                 .collect(),
+            opened_chests: self.world.opened_chests.iter().copied().collect(),
             bugs_caught: self.bugs_caught.clone(),
             has_bug_net: self.player.has_bug_net,
             bugs_picked: self.bugs_picked_today.iter().copied().collect(),
@@ -2035,6 +2040,40 @@ impl App {
         if !hint.is_empty() {
             self.narrator.say(hint.to_string());
         }
+    }
+
+    fn open_ocean_chest(&mut self, x: i32, y: i32) {
+        if self.world.opened_chests.contains(&(x, y)) {
+            self.narrator.say("Empty chest. Already cracked open.");
+            return;
+        }
+        let h = ((x as u32).wrapping_mul(0x9E37_79B1))
+            .wrapping_add((y as u32).wrapping_mul(0x85EB_CA77))
+            .wrapping_add(self.world.seed.wrapping_mul(0xC2B2_AE35));
+        let valu = 80u64 + (h % 520) as u64;
+        const TRINKETS: &[(&str, &str)] = &[
+            ("brass key",        "A pitted brass key. Fits no lock you know of."),
+            ("sea glass",        "Surf-tumbled glass, the color of shallow water."),
+            ("silver coin",      "A foreign coin. Heavy for its size."),
+            ("glass float",      "A hollow glass orb. Once buoyed a net."),
+            ("river pearl",      "Small, off-round, faintly iridescent."),
+            ("smoked stone",     "Black quartz, polished smooth by tides."),
+            ("captain's button", "A tarnished brass button. Anchor stamped on the face."),
+            ("faded chart",      "A salt-stained scrap of map. The names are gone."),
+        ];
+        let (tname, tdesc) = TRINKETS[(h as usize >> 8) % TRINKETS.len()];
+        self.player.valu = self.player.valu.saturating_add(valu);
+        self.lifetime_valu = self.lifetime_valu.saturating_add(valu);
+        self.stats.valu_earned = self.stats.valu_earned.saturating_add(valu);
+        self.player.items.push(crate::item::Item {
+            name: tname.to_string(),
+            category: crate::item::Category::Misc,
+            description: tdesc.to_string(),
+        });
+        self.world.open_chest(x, y);
+        self.narrator.say(format!(
+            "*** Chest! +{valu}$V and a {tname}. ***"
+        ));
     }
 
     fn tick_bounty(&mut self, fish_name: &str) {
@@ -5186,6 +5225,9 @@ impl App {
                 self.scene = Scene::LureBench { cursor: 0 };
                 self.mode = Mode::Insert;
             }
+            Tile::Chest => {
+                self.open_ocean_chest(nx, ny);
+            }
             Tile::OreRock => {
                 if !self.player.has_pickaxe {
                     self.narrator
@@ -7487,6 +7529,7 @@ fn map_glyph_for(world: &World, x: i32, y: i32) -> (char, Style) {
         Tile::CookingPot => ('O', Color::Rgb(255, 200, 120)),
         Tile::BaitBench => ('=', Color::Rgb(180, 130, 80)),
         Tile::Curio => ('*', Color::Rgb(220, 200, 160)),
+        Tile::Chest => ('$', Color::Rgb(255, 215, 90)),
         Tile::PortalFrame => ('#', Color::Rgb(190, 175, 200)),
         Tile::Mountain => ('^', Color::Rgb(140, 140, 145)),
         Tile::MountainSnow => ('^', Color::Rgb(245, 245, 250)),

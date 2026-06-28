@@ -231,6 +231,11 @@ pub struct SaveData {
     /// shinies). Persists so reloading doesn't re-trigger the milestone.
     #[serde(default)]
     pub has_shiny_charm: bool,
+    /// Surface-dim ocean chests already cracked open. Stored as flat (x, y)
+    /// tuples; the world overlays Sand at these coords so a reload doesn't
+    /// re-arm the loot drop.
+    #[serde(default)]
+    pub opened_chests: Vec<(i32, i32)>,
 }
 
 fn default_stamina() -> f32 {

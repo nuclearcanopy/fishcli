@@ -484,6 +484,11 @@ pub enum Tile {
     /// use `x` while facing it to read its description. Lore lives in
     /// `assets/inspect.json` under `curio:<id>` keys.
     Curio,
+    /// Treasure chest on a tiny ocean island. Non-walkable; player stands
+    /// adjacent and presses `f` to open it (one-shot reward: valu + a
+    /// random trinket). Opened chests are tracked in `World::opened_chests`
+    /// and render as Sand after the reward fires.
+    Chest,
     // --- mountains (surface) ---
     /// gray rocky mountain body · spiky, blocks movement
     Mountain,
@@ -597,6 +602,7 @@ impl Tile {
             Tile::CookingPot => "CookingPot",
             Tile::BaitBench => "BaitBench",
             Tile::Curio => "Curio",
+            Tile::Chest => "Chest",
             Tile::Mountain => "Mountain",
             Tile::MountainSnow => "MountainSnow",
             Tile::MountainEntrance => "MountainEntrance",
@@ -617,6 +623,10 @@ pub struct World {
     /// rendering: their trunk/canopy cells fall through to underlying
     /// grass. Mirrors the vein cooldown map in spirit.
     pub chopped: std::collections::HashMap<(i32, i32), u64>,
+    /// Chests already opened. Surface-only · keyed by the anchor cell of
+    /// the chest tile inside its ocean island. Persisted in SaveData so a
+    /// reload doesn't re-arm the loot drop.
+    pub opened_chests: std::collections::HashSet<(i32, i32)>,
 }
 
 pub struct WorldView<'a> {
@@ -899,7 +909,14 @@ impl World {
             seed,
             dim: Dimension::Surface,
             chopped: std::collections::HashMap::new(),
+            opened_chests: std::collections::HashSet::new(),
         }
+    }
+
+    /// Mark the chest at (x, y) as opened so future lookups render Sand.
+    pub fn open_chest(&mut self, x: i32, y: i32) {
+        self.opened_chests.insert((x, y));
+        bump_world_get_gen();
     }
 
     /// True when the tree anchored at (ax, ay) is currently chopped down
@@ -1045,6 +1062,12 @@ impl World {
             return Tile::Dock;
         }
         if y >= 6 {
+            if let Some(t) = ocean_island_tile_at(x, y, self.seed) {
+                if matches!(t, Tile::Chest) && self.opened_chests.contains(&(x, y)) {
+                    return Tile::Sand;
+                }
+                return t;
+            }
             return Tile::Water;
         }
         if y == 5 {
@@ -1600,6 +1623,13 @@ impl World {
                     ('?', Style::default().fg(Color::Magenta))
                 }
             }
+            Tile::Chest => (
+                '$',
+                Style::default()
+                    .fg(Color::Rgb(255, 215, 90))
+                    .bg(Color::Rgb(120, 90, 35))
+                    .add_modifier(Modifier::BOLD),
+            ),
             // Smelter: chunky furnace glyph with a low orange glow.
             Tile::Smelter => (
                 'S',
@@ -3919,6 +3949,41 @@ fn on_winding_pier(dx: i32, dy: i32, hx: i32, hy: i32, vhash: u32) -> bool {
     let ddx = dx as f32 - wp_x;
     let ddy = dy as f32 - wp_y;
     ddx * ddx + ddy * ddy <= 2.25
+}
+
+/// Tiny ocean island generator. Carves sparse 5-tile sand plus signs in
+/// deep water with a Chest at the center. Used by `surface_get` to seed
+/// chest-bearing islets the player can sail out to once they have a boat.
+///
+/// Grid: every (cell_w × cell_h) region of ocean may host one island.
+/// The anchor is jittered within the cell so islands aren't visibly aligned.
+pub fn ocean_island_tile_at(x: i32, y: i32, seed: u32) -> Option<Tile> {
+    // Don't sprout islands right under the pier or in the shore band.
+    if y < 25 {
+        return None;
+    }
+    const CELL_W: i32 = 70;
+    const CELL_H: i32 = 35;
+    let cx = x.div_euclid(CELL_W);
+    let cy = y.div_euclid(CELL_H);
+    let h = hash2(cx, cy, seed.wrapping_add(0x151A_DDDD));
+    // ~1 island per 4 cells. With 70×35 cells that's ~one per ~10k tiles.
+    if h % 4 != 0 {
+        return None;
+    }
+    // Jitter the anchor inside the cell so islands don't tile in a grid.
+    let ax = cx * CELL_W + (((h >> 8) & 0x3F) as i32) + 2;
+    let ay = cy * CELL_H + (((h >> 14) & 0x1F) as i32) + 2;
+    if ay < 25 {
+        return None;
+    }
+    let dx = x - ax;
+    let dy = y - ay;
+    match (dx, dy) {
+        (0, 0) => Some(Tile::Chest),
+        (1, 0) | (-1, 0) | (0, 1) | (0, -1) => Some(Tile::Sand),
+        _ => None,
+    }
 }
 
 fn hash2(x: i32, y: i32, seed: u32) -> u32 {
