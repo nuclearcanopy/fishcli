@@ -2536,7 +2536,7 @@ fn value_noise_fractal(x: i32, y: i32, seed: u32, base_freq: f32, octaves: u32) 
     let mut freq = base_freq;
     let mut total_amp = 0.0;
     for o in 0..octaves {
-        sum += value_noise_2d(x, y, seed.wrapping_add(o * 0xA5A5_5A5A), freq) * amp;
+        sum += value_noise_2d(x, y, seed.wrapping_add(o.wrapping_mul(0xA5A5_5A5A)), freq) * amp;
         total_amp += amp;
         amp *= 0.5;
         freq *= 2.0;
