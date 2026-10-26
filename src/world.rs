@@ -2672,8 +2672,8 @@ impl RiverParams {
                 a2: 10.0 + ((h >> 6) & 0xF) as f32,
                 f2: 0.012 + ((h >> 22) & 0x7) as f32 * 0.001,
                 p2: ((h >> 14) as f32) * 1e-4,
-                base_w: 18.0 + ((h >> 24) & 0xF) as f32,
-                w_amp: 14.0,
+                base_w: 7.0 + ((h >> 24) & 0x7) as f32,
+                w_amp: 5.0,
                 w_freq: 0.004,
                 w_phase: ((h >> 16) as f32) * 1e-4,
                 source_x: -550 - ((h >> 8) as i32).rem_euclid(200),
@@ -2687,8 +2687,8 @@ impl RiverParams {
                 a2: 3.0 + ((h >> 6) & 0xF) as f32 * 0.5,
                 f2: 0.025 + ((h >> 22) & 0x7) as f32 * 0.001,
                 p2: ((h >> 14) as f32) * 1e-4,
-                base_w: 3.0 + ((h >> 22) & 0xF) as f32,
-                w_amp: 4.0,
+                base_w: 1.5 + ((h >> 22) & 0x7) as f32 * 0.5,
+                w_amp: 1.5,
                 w_freq: 0.012,
                 w_phase: ((h >> 16) as f32) * 1e-4,
                 source_x: -550 - ((h >> 8) as i32).rem_euclid(200),
@@ -2735,7 +2735,7 @@ pub fn river_at(x: i32, y: i32, seed: u32) -> Option<RiverHit> {
     // anything that could spill into the current row.
     for db in -2..=2 {
         let sh = hash2(band + db, 0, seed.wrapping_add(0x5217_E001));
-        if sh % 11 != 0 {
+        if sh % 32 != 0 {
             continue;
         }
         let p = RiverParams::from_hash(band + db, sh, true);
@@ -2761,7 +2761,7 @@ pub fn river_at(x: i32, y: i32, seed: u32) -> Option<RiverHit> {
     // Band rivers · thinner, more common.
     for db in -1..=1 {
         let h = hash2(band + db, 0, seed.wrapping_add(0x812E_7100));
-        if h % 6 != 0 {
+        if h % 20 != 0 {
             continue;
         }
         let p = RiverParams::from_hash(band + db, h, false);
@@ -2899,7 +2899,7 @@ pub fn bridge_at(x: i32, y: i32, seed: u32) -> bool {
     // bridge actually stays put across the channel as you walk along it.
     for db in -2..=2 {
         let sh = hash2(band + db, 0, seed.wrapping_add(0x5217_E001));
-        if sh % 11 != 0 {
+        if sh % 32 != 0 {
             continue;
         }
         let p = RiverParams::from_hash(band + db, sh, true);
@@ -2907,7 +2907,7 @@ pub fn bridge_at(x: i32, y: i32, seed: u32) -> bool {
             continue;
         }
         let w = p.width(nearest);
-        if w < 8.0 {
+        if w < 4.0 {
             continue;
         }
         let center = p.center_y(nearest);
@@ -2922,7 +2922,7 @@ pub fn bridge_at(x: i32, y: i32, seed: u32) -> bool {
     }
     for db in -1..=1 {
         let h = hash2(band + db, 0, seed.wrapping_add(0x812E_7100));
-        if h % 6 != 0 {
+        if h % 20 != 0 {
             continue;
         }
         let p = RiverParams::from_hash(band + db, h, false);
@@ -2930,7 +2930,7 @@ pub fn bridge_at(x: i32, y: i32, seed: u32) -> bool {
             continue;
         }
         let w = p.width(nearest);
-        if w < 6.0 {
+        if w < 2.5 {
             continue;
         }
         let center = p.center_y(nearest);
@@ -4111,18 +4111,18 @@ fn ocean_depth_compute(world: &World, x: i32, y: i32) -> u32 {
     };
     for r in 1..=cap {
         for dx in -r..=r {
-            if !is_water(world.get(x + dx, y - r)) {
+            if !is_water(world.get_cached(x + dx, y - r)) {
                 return r as u32;
             }
-            if !is_water(world.get(x + dx, y + r)) {
+            if !is_water(world.get_cached(x + dx, y + r)) {
                 return r as u32;
             }
         }
         for dy in (-r + 1)..r {
-            if !is_water(world.get(x - r, y + dy)) {
+            if !is_water(world.get_cached(x - r, y + dy)) {
                 return r as u32;
             }
-            if !is_water(world.get(x + r, y + dy)) {
+            if !is_water(world.get_cached(x + r, y + dy)) {
                 return r as u32;
             }
         }
@@ -5350,14 +5350,14 @@ fn shore_anim(x: i32, row: i32, tick: u64) -> (char, Style) {
 }
 
 fn shore_splash(x: i32, row: i32, tick: u64) -> Option<(char, Style)> {
-    const SPAWN_EVERY: u64 = 6;
+    const SPAWN_EVERY: u64 = 18;
     const REACH: i32 = 4;
-    // sand row dies fast so the foam appears to RETREAT toward the water row
-    let lifetime: u64 = if row == 0 { 32 } else { 70 };
-    let look_back = if row == 1 { lifetime } else { lifetime + 8 };
+    // both rows light up on a splash; sand dies first so the foam reads as
+    // a wave retreating into the water row.
+    let lifetime: u64 = if row == 0 { 22 } else { 38 };
 
     let mut active: Option<(u64, i32, u32)> = None;
-    let earliest = tick.saturating_sub(look_back);
+    let earliest = tick.saturating_sub(lifetime);
     let mut t = (earliest / SPAWN_EVERY) * SPAWN_EVERY;
     while t <= tick {
         for dx in -REACH..=REACH {
@@ -5376,12 +5376,6 @@ fn shore_splash(x: i32, row: i32, tick: u64) -> Option<(char, Style)> {
             let cur_reach = (max_reach as f32 * (1.0 - life_frac * 0.6)).round() as i32;
             if dx.abs() > cur_reach {
                 continue;
-            }
-            if row == 0 {
-                let extend = ((h >> 8) % 2) == 0;
-                if !extend {
-                    continue;
-                }
             }
             if let Some((cur_t, _, _)) = active {
                 if t < cur_t {
@@ -5841,7 +5835,7 @@ const MOUNTAIN_H: i32 = 24;
 /// (ax, ay - MOUNTAIN_H). Returns None if this band hosts no river.
 fn mountain_anchor_for_band(band: i32, db: i32, seed: u32, spine: bool) -> Option<(i32, i32, u32)> {
     let salt = if spine { 0x5217_E001 } else { 0x812E_7100 };
-    let modulus = if spine { 11 } else { 6 };
+    let modulus = if spine { 32 } else { 20 };
     let h = hash2(band + db, 0, seed.wrapping_add(salt));
     if h % modulus != 0 {
         return None;
